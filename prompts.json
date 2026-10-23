@@ -1,0 +1,15 @@
+{
+  "_comment": "Defaults here apply to every prompt; per-prompt objects can override any of them.",
+  "steps": 50,
+  "cfg": 3.0,
+  "width": 1024,
+  "height": 1024,
+  "batch": 4,
+  "seed": -1,
+  "negative": "",
+  "prompts": [
+    "A photograph of a woman standing on a rooftop at golden hour, wind in her hair, city skyline behind her, cinematic lighting, shallow depth of field.",
+    "A woman in a dark green coat waiting at a rainy train platform at night, neon reflections in puddles, film grain.",
+    "A close-up portrait of a young woman with silver hair and freckles, soft window light from the left, plain grey background, sharp focus."
+  ]
+}

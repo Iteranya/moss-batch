@@ -1,0 +1,6 @@
+out/
+_test_out/
+__pycache__/
+*.pyc
+.git/
+.env
