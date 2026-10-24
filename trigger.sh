@@ -63,7 +63,12 @@ fi
 
 # -- 2. upload the job ----------------------------------------------------
 log "uploading prompts from ${PROMPTS_FILE}"
-python - "${JOB_ID}" "${PROMPTS_FILE}" > /tmp/moss_job.json <<'PY'
+# Native Windows python/curl do not translate MSYS paths, so hand python a
+# Windows path and stage the job document in the current directory.
+PY_PROMPTS="$(cygpath -w "${PROMPTS_FILE}" 2>/dev/null || printf '%s' "${PROMPTS_FILE}")"
+TMPJOB=".moss_job.json"
+trap 'rm -f "${TMPJOB}"' EXIT
+python - "${JOB_ID}" "${PY_PROMPTS}" > "${TMPJOB}" <<'PY'
 import json, sys
 job_id, path = sys.argv[1], sys.argv[2]
 with open(path, encoding="utf-8") as f:
@@ -74,7 +79,7 @@ PY
 UP_CODE=$(curl -sS -o /dev/null -w '%{http_code}' -X PUT \
   "${S3S}/moss-batch/in/job.json" "${AUTH[@]}" \
   -F 'mimeType="application/json"' \
-  -F 'file=@/tmp/moss_job.json') || UP_CODE=000
+  -F "file=@${TMPJOB}") || UP_CODE=000
 log "upload -> ${UP_CODE}"
 [ "${UP_CODE}" = "200" ] || { echo "S3S upload failed (${UP_CODE})" >&2; exit 1; }
 
@@ -138,10 +143,11 @@ log "results in ${OUT_BASE}"
 ls -la "${OUT_BASE}"
 if [ -f "${OUT_BASE}/manifest.json" ]; then
   echo
+  WIN_MANIFEST="$(cygpath -w "${OUT_BASE}/manifest.json" 2>/dev/null || printf '%s' "${OUT_BASE}/manifest.json")"
   python -c "
 import json,sys
-m=json.load(open('${OUT_BASE}/manifest.json'))
+m=json.load(open(sys.argv[1]))
 for k in ('images','wall_seconds','s_per_image_gpu','s_per_image_wall','batch_size','resolution'):
     if k in m: print(f'  {k:18} {m[k]}')
-"
+" "$WIN_MANIFEST"
 fi
