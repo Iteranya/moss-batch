@@ -164,12 +164,25 @@ tested without a Salad account.
 
 ## The Playground UI
 
-`index.html` gained a **Batch queue** card: `+ add current layout` snapshots
-`toLayout()` plus the current canvas size, the queue persists in `localStorage`
-(`moss.batch`), each row validates its own box extents, and there are
-**Export prompts.json** / **Copy JSON** / **Clear** buttons. Warnings are computed
-client-side with the same rules as `check_layout()`, so a size mismatch shows up
-before a single GPU-second is spent.
+`index.html` gained a **Job queue** card. It holds a mixed list of jobs — plain
+text prompts and Playground layouts — so you can prepare a few dozen before
+sending anything.
+
+- `+ text` queues a prompt string; `+ current layout` snapshots `toLayout()`
+  together with the canvas size it was drawn at.
+- Per row: reorder (`↑ ↓`), edit (tag / prompt / images / seed), remove (`✕`).
+- `imgs→1` normalises the whole queue to one image per job — the right default
+  for layout work, where each job is one composition.
+- `import` reads an existing `prompts.json` back into the queue.
+- The list persists in `localStorage` (`moss.batch`).
+
+Each row validates itself with the same rules as `check_layout()`, and
+**Send to GPU refuses to POST while any warning is present** — so a size mismatch
+is caught before a single GPU-second is spent. Export format is exactly the
+schema above; a text job emits `{"prompt": ...}`, a layout job emits
+`{"layout": {...}}`, both with `width`/`height`/`batch`, plus `seed` when >= 0.
+Omitting `seed` means random-per-job (the worker records the resolved seed in
+`manifest.json`).
 
 ## Sanity check without a GPU
 
