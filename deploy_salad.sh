@@ -43,7 +43,10 @@ read -r -d '' BODY <<JSON || true
       "WIDTH": "1024",
       "HEIGHT": "1024",
       "SAGE": "0",
-      "RATE": "${RATE}"
+      "RATE": "${RATE}",
+      "JOB_PATH": "${JOB_PATH:-}",
+      "SALAD_ORG": "${SALAD_ORG}",
+      "SALAD_API_KEY": "${SALAD_API_KEY}"
     },
     "command": [],
     "image_caching": false

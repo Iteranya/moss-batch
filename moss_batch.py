@@ -26,7 +26,7 @@ import urllib.error
 import urllib.parse
 import urllib.request
 import uuid
-from dataclasses import dataclass, field, asdict
+from dataclasses import dataclass, field, asdict, fields as dc_fields
 from pathlib import Path
 
 # ----------------------------------------------------------------------------
@@ -211,13 +211,73 @@ class Job:
         return keep[:60].strip("-") or f"{self.index:04d}"
 
 
+def compile_layout(layout: dict) -> str:
+    """Serialise a Playground layout into the exact prompt string MOSS-Image expects.
+
+    The playground sends ``JSON.stringify(toLayout())`` as the API ``prompt``, so
+    this has to match byte-for-byte: compact separators, no ASCII escaping, key
+    order preserved from the source file. Whitespace still changes the token
+    stream, so a pretty-printed dump is NOT equivalent.
+
+    NOTE: ``bbox`` is ``[y1, x1, y2, x2]`` — y first. Do not "helpfully" reorder
+    it to xyxy; that silently rotates every box 90 degrees.
+    """
+    if not isinstance(layout, dict):
+        raise SystemExit(f"layout must be a JSON object, got {type(layout).__name__}")
+    if layout.get("elements") and "bbox_coord_space" not in layout:
+        layout = {**layout, "bbox_coord_space": "abs_centralized"}
+    return json.dumps(layout, separators=(",", ":"), ensure_ascii=False)
+
+
+def check_layout(layout: dict, width: int, height: int) -> list[str]:
+    """Warn when a layout's boxes cannot fit the render size it is paired with.
+
+    Coordinates are centred on (0,0) and span +-half the canvas, so a box needs
+    |x| <= width/2 and |y| <= height/2. A mismatch here is the difference
+    between "characters are where I drew them" and "everything is cropped".
+    """
+    problems: list[str] = []
+    els = layout.get("elements") or []
+    if not els:
+        return problems
+    if layout.get("bbox_coord_space", "abs_centralized") != "abs_centralized":
+        problems.append(
+            f"bbox_coord_space={layout.get('bbox_coord_space')!r} is not "
+            "'abs_centralized' — coordinates will not mean what you think")
+    hw, hh = width / 2, height / 2
+    for i, el in enumerate(els):
+        bbox = el.get("bbox")
+        if not (isinstance(bbox, list) and len(bbox) == 4):
+            problems.append(f"element {i} has no usable bbox")
+            continue
+        y1, x1, y2, x2 = bbox
+        if max(abs(x1), abs(x2)) > hw + 1:
+            problems.append(
+                f"element {i} x={max(abs(x1), abs(x2)):.0f} exceeds half-width {hw:.0f} "
+                f"for {width}x{height} — layout was drawn at a different size")
+        if max(abs(y1), abs(y2)) > hh + 1:
+            problems.append(
+                f"element {i} y={max(abs(y1), abs(y2)):.0f} exceeds half-height {hh:.0f} "
+                f"for {width}x{height} — layout was drawn at a different size")
+    return problems
+
+
+JOB_FIELDS = {f.name for f in dc_fields(Job)}
+
+
+def _make_job(index: int, prompt: str, merged: dict) -> Job:
+    kwargs = {k: v for k, v in merged.items()
+              if k in JOB_FIELDS and k not in ("index", "prompt")}
+    return Job(index=index, prompt=prompt, **kwargs)
+
+
 def load_jobs(path: Path, args) -> list[Job]:
     raw = json.loads(path.read_text(encoding="utf-8"))
     if isinstance(raw, dict):
         defaults = {k: raw[k] for k in
                     ("negative", "steps", "cfg", "width", "height", "batch", "seed",
                      "shift", "slg_layer") if k in raw}
-        prompts = raw.get("prompts") or []
+        prompts = raw.get("prompts") or raw.get("jobs") or []
     else:
         defaults, prompts = {}, raw
 
@@ -233,12 +293,28 @@ def load_jobs(path: Path, args) -> list[Job]:
     jobs = []
     for i, p in enumerate(prompts):
         if isinstance(p, str):
-            jobs.append(Job(index=i, prompt=p, **defaults))
-        elif isinstance(p, dict):
-            merged = {**defaults, **p}
-            jobs.append(Job(index=i, prompt=merged.pop("prompt"), **merged))
-        else:
+            jobs.append(_make_job(i, p, defaults))
+            continue
+        if not isinstance(p, dict):
             raise SystemExit(f"{path}: prompt {i} is neither a string nor an object")
+
+        merged = {**defaults, **p}
+        layout = merged.pop("layout", None)
+        if layout is not None:
+            # Playground layout job: the layout IS the prompt.
+            text = layout if isinstance(layout, str) else compile_layout(layout)
+            if not isinstance(layout, str):
+                w = int(merged.get("width", 1024))
+                h = int(merged.get("height", 1024))
+                for problem in check_layout(layout, w, h):
+                    print(f"[warn] job {i}: {problem}", file=sys.stderr)
+            jobs.append(_make_job(i, text, merged))
+            continue
+
+        if "prompt" not in merged:
+            raise SystemExit(
+                f"{path}: prompt {i} has neither 'prompt' nor 'layout'")
+        jobs.append(_make_job(i, merged.pop("prompt"), merged))
     return jobs
 
 
