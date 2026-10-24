@@ -54,18 +54,33 @@ RUN mkdir -p /opt/ComfyUI/models/diffusion_models \
              /opt/ComfyUI/models/text_encoders \
              /opt/ComfyUI/models/vae
 
+# Download each weight in its OWN layer, deliberately.
+# Registries cap a single layer at ~10 GB (GHCR enforces 10 GB, Docker Hub is
+# similar). Fetching all three in one RUN produced a single 15.4 GB layer, which
+# builds fine locally and then FAILS AT PUSH. Three RUNs => 5.41 / 9.75 / 0.25 GB
+# layers, every one of them under the cap.
 RUN set -eux; \
-    base=https://huggingface.co/Comfy-Org/MOSS-Image/resolve/main; \
-    fetch() { \
-      echo ">>> $1"; \
-      curl -fL --retry 5 --retry-delay 5 --retry-all-errors \
-           -o "/opt/ComfyUI/models/$1" "$base/$1"; \
-      test -s "/opt/ComfyUI/models/$1"; \
-    }; \
-    fetch diffusion_models/moss_image_sft_int8_convrot.safetensors; \
-    fetch text_encoders/qwen3.5_9b_int8_convrot.safetensors; \
-    fetch vae/flux2-vae_small.safetensors; \
-    ls -lh /opt/ComfyUI/models/diffusion_models /opt/ComfyUI/models/text_encoders /opt/ComfyUI/models/vae
+    f=diffusion_models/moss_image_sft_int8_convrot.safetensors; \
+    curl -fL --retry 5 --retry-delay 5 --retry-all-errors \
+      -o "/opt/ComfyUI/models/$f" \
+      "https://huggingface.co/Comfy-Org/MOSS-Image/resolve/main/$f"; \
+    test -s "/opt/ComfyUI/models/$f"
+
+RUN set -eux; \
+    f=text_encoders/qwen3.5_9b_int8_convrot.safetensors; \
+    curl -fL --retry 5 --retry-delay 5 --retry-all-errors \
+      -o "/opt/ComfyUI/models/$f" \
+      "https://huggingface.co/Comfy-Org/MOSS-Image/resolve/main/$f"; \
+    test -s "/opt/ComfyUI/models/$f"
+
+RUN set -eux; \
+    f=vae/flux2-vae_small.safetensors; \
+    curl -fL --retry 5 --retry-delay 5 --retry-all-errors \
+      -o "/opt/ComfyUI/models/$f" \
+      "https://huggingface.co/Comfy-Org/MOSS-Image/resolve/main/$f"; \
+    test -s "/opt/ComfyUI/models/$f"
+
+RUN ls -lh /opt/ComfyUI/models/diffusion_models /opt/ComfyUI/models/text_encoders /opt/ComfyUI/models/vae
 
 # Sanity check: sizes are asserted so a truncated download fails the BUILD,
 # not the batch. Byte counts come from the HF API (X-Linked-Size).
