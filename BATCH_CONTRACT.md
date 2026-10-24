@@ -137,6 +137,40 @@ python playground2batch.py --from-export myjob.batch.json -o prompts.json
 python playground2batch.py --check prompts.json        # validate before spending GPU
 ```
 
+## The relay (optional, but it's what "Send to GPU" calls)
+
+`batch_server.py` is a stdlib-only localhost relay. It validates the batch with
+the *same* `load_jobs` the GPU worker uses, writes `runs/<job_id>/prompts.json`,
+and shells out to `trigger.sh`.
+
+```bash
+export SALAD_API_KEY=... SALAD_ORG=... SALAD_PROJECT=...
+python batch_server.py                      # http://127.0.0.1:8787
+```
+
+| Method | Path | Does |
+|---|---|---|
+| GET | `/api/health` | `{"ok":true,"trigger":"bash trigger.sh"}` |
+| POST | `/api/batch` | body = the doc above → `202 {"job_id":…}`, or `400` with `problems[]` |
+| GET | `/api/batch/<job_id>` | `{state, detail, dir, tail}` — `tail` is the last 12 log lines |
+
+It also serves the Playground at `/`, which fixes the `file://` → `Origin: null`
+problem and keeps localStorage on one origin. Point the UI's **batch runner**
+field at `http://127.0.0.1:8787`, hit **Send to GPU**, and the panel polls status
+`running → done|failed` for you.
+
+`TRIGGER_CMD="bash something_else.sh"` swaps the runner — that's how the relay is
+tested without a Salad account.
+
+## The Playground UI
+
+`index.html` gained a **Batch queue** card: `+ add current layout` snapshots
+`toLayout()` plus the current canvas size, the queue persists in `localStorage`
+(`moss.batch`), each row validates its own box extents, and there are
+**Export prompts.json** / **Copy JSON** / **Clear** buttons. Warnings are computed
+client-side with the same rules as `check_layout()`, so a size mismatch shows up
+before a single GPU-second is spent.
+
 ## Sanity check without a GPU
 
 ```bash
